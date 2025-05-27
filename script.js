@@ -61,15 +61,26 @@ document.addEventListener('DOMContentLoaded', () => {
             const credential = await navigator.credentials.create({ publicKey: creationOptions });
 
             if (credential) {
-                statusMessage.textContent = 'Passkey created successfully! Simulating Apple Pass issuance and account creation...';
+                statusMessage.textContent = 'Passkey created successfully! Attempting to open Apple Pass...';
                 console.log('Passkey credential created:', credential);
 
-                // Simulate backend processing
-                await new Promise(resolve => setTimeout(resolve, 1500)); 
+                // Attempt to open the .pkpass file
+                // On iOS, Safari should offer to add it to Wallet.
+                // On other platforms/browsers, it will likely download.
+                window.location.href = 'demo.pkpass'; 
 
-                statusMessage.textContent = 'Apple Pass issued and account created! (Simulated)';
+                // Disable button after attempting to open pass
                 claimButton.disabled = true;
-                claimButton.textContent = 'Claimed!';
+                claimButton.textContent = 'Claimed & Pass Opened!';
+                
+                // Optionally, you can provide a fallback message if the redirect doesn't work as expected
+                // or if the user is not on iOS, e.g., after a short delay.
+                setTimeout(() => {
+                    if (document.hasFocus()) { // Check if browser still has focus, might indicate redirect didn't happen or was quick
+                        statusMessage.textContent = 'Apple Pass initiated. If it didn\'t open, please check your downloads or ensure you are on a compatible device (iOS).';
+                    }
+                }, 3000); // Adjust delay as needed
+
             } else {
                 statusMessage.textContent = 'Passkey creation failed or was cancelled.';
             }
