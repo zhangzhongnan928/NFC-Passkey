@@ -1,95 +1,226 @@
+import Privy from '@privy-io/js-sdk-core';
+
+// Add PrivyClient if you were to use the SDK directly
+// For now, we simulate the Privy interaction.
+
 document.addEventListener('DOMContentLoaded', () => {
     const claimButton = document.getElementById('claimButton');
     const statusMessage = document.getElementById('statusMessage');
+    const privyAppId = 'cmb9z52y600o1ky0m78whsb08'; // Your Privy App ID
+    let privy = null;
+
+    // Custom LocalStorage Adapter for Privy
+    const localStorageAdapter = {
+        get: (key) => {
+            try {
+                return window.localStorage.getItem(key);
+            } catch (error) {
+                console.error('LocalStorageAdapter: Error getting item', key, error);
+                // Potentially update UI or status message if storage is completely blocked
+                statusMessage.textContent = 'Error: Browser storage is inaccessible. Please check your browser settings (e.g., disable "Block all cookies").';
+                claimButton.disabled = true;
+                return null;
+            }
+        },
+        put: (key, value) => {
+            try {
+                window.localStorage.setItem(key, value);
+            } catch (error) {
+                console.error('LocalStorageAdapter: Error setting item', key, error);
+                statusMessage.textContent = 'Error: Browser storage is inaccessible. Please check your browser settings.';
+                claimButton.disabled = true;
+            }
+        },
+        del: (key) => {
+            try {
+                window.localStorage.removeItem(key);
+            } catch (error) {
+                console.error('LocalStorageAdapter: Error deleting item', key, error);
+                statusMessage.textContent = 'Error: Browser storage is inaccessible. Please check your browser settings.';
+                claimButton.disabled = true;
+            }
+        },
+        // getKeys is optional, but good to have if Privy uses it.
+        getKeys: () => {
+            try {
+                return Object.keys(window.localStorage);
+            } catch (error) {
+                console.error('LocalStorageAdapter: Error getting keys', error);
+                 statusMessage.textContent = 'Error: Browser storage is inaccessible. Please check your browser settings.';
+                claimButton.disabled = true;
+                return [];
+            }
+        }
+    };
+
+    try {
+        privy = new Privy({ 
+            appId: privyAppId,
+            storage: localStorageAdapter // Use the custom adapter
+        });
+        console.log('Privy SDK initialized with custom storage adapter.');
+        console.log('Inspecting Privy object:', privy); // Log the privy object for inspection
+    } catch (error) {
+        statusMessage.textContent = 'Error: Account system components failed to initialize. Please refresh.';
+        claimButton.disabled = true;
+        console.error('Error initializing Privy SDK:', error);
+        return;
+    }
+
+    // Helper function to convert string to Uint8Array
+    function stringToUint8Array(str) {
+        const encoder = new TextEncoder();
+        return encoder.encode(str);
+    }
+
+    async function createGuestUserAndWallet() {
+        statusMessage.textContent = 'Setting up your secure account...';
+        let user;
+        let walletAddress;
+        
+        try {
+            statusMessage.textContent = 'Creating new guest account...';
+            console.log('Attempting guest account creation directly...');
+
+            if (privy.auth && typeof privy.createGuestAccount === 'function') {
+                console.log('Attempting privy.createGuestAccount()...');
+                user = await privy.createGuestAccount();
+                console.log('privy.createGuestAccount() completed. User:', user);
+            } else if (privy.unstable_createGuestAccount && typeof privy.unstable_createGuestAccount === 'function') {
+                console.log('Attempting privy.unstable_createGuestAccount()...');
+                user = await privy.unstable_createGuestAccount();
+                console.log('privy.unstable_createGuestAccount() completed. User:', user);
+            } else {
+                // This else block implies neither createGuestAccount nor unstable_createGuestAccount is a function.
+                // This is a critical failure for the desired headless flow.
+                console.error('FATAL: No method found for direct guest account creation (privy.createGuestAccount or privy.unstable_createGuestAccount).');
+                throw new Error('Headless guest account creation method not available in SDK.');
+            }
+
+            if (!user) {
+                // This case means createGuestAccount was called but returned a falsy value (e.g. null/undefined)
+                console.error('Guest account creation function was called but returned no user.');
+                throw new Error('Guest account creation attempt returned no user.');
+            }
+            console.log('Guest user session active. User ID:', user.id);
+            statusMessage.textContent = 'Guest account active. Setting up secure storage...';
+
+            // Now that we have a user (guest), check if they already have a wallet from a previous session
+            if (user.wallet && user.wallet.address) {
+                 walletAddress = user.wallet.address;
+                 console.log('Guest user already has a wallet:', walletAddress);
+            } else {
+                console.log('Attempting privy.embeddedWallet.create() for guest user...');
+                const embeddedWallet = await privy.embeddedWallet.create();
+                console.log('privy.embeddedWallet.create() completed. Wallet:', embeddedWallet);
+
+                if (!embeddedWallet || !embeddedWallet.address) {
+                    throw new Error('Secure storage (wallet) creation failed for guest.');
+                }
+                walletAddress = embeddedWallet.address;
+                console.log('New secure storage (wallet) created for guest:', walletAddress);
+            }
+            
+            statusMessage.textContent = `Account ready: ${walletAddress.substring(0, 10)}...`;
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            return walletAddress;
+
+        } catch (error) {
+            console.error('Privy guest/wallet setup error:', error);
+            statusMessage.textContent = `Account setup error: ${error.message || 'An unknown error occurred.'}`;
+            claimButton.disabled = false;
+            throw error;
+        }
+    }
 
     claimButton.addEventListener('click', async () => {
-        statusMessage.textContent = 'Initializing Passkey creation...';
-
-        if (!navigator.credentials || !navigator.credentials.create) {
-            statusMessage.textContent = 'WebAuthn API is not supported in this browser.';
-            return;
-        }
+        statusMessage.textContent = 'Initializing...';
+        claimButton.disabled = true;
 
         try {
-            // 1. Generate a challenge (should come from the server in a real application)
+            const walletAddress = await createGuestUserAndWallet();
+            if (!walletAddress) {
+                // Error message already set by createGuestUserAndWallet
+                claimButton.disabled = false;
+                return;
+            }
+
+            statusMessage.textContent = 'Initializing secure sign-in method...';
+
+            if (!navigator.credentials || !navigator.credentials.create) {
+                statusMessage.textContent = 'Secure sign-in method (WebAuthn) is not supported.';
+                claimButton.disabled = false;
+                return;
+            }
+
             const challenge = new Uint8Array(32);
             window.crypto.getRandomValues(challenge);
 
-            // 2. Relying Party (RP) information (your website)
             const rp = {
                 name: 'NFC Passkey Demo',
-                id: window.location.hostname, // Important: This should match your domain
+                id: window.location.hostname,
             };
 
-            // 3. User information (should be handled by your server)
-            // For demo, generate a random user ID
-            const userId = new Uint8Array(16);
-            window.crypto.getRandomValues(userId);
-            const user = {
+            const userId = stringToUint8Array(walletAddress); // Use wallet address as user ID for passkey
+            const passkeyUser = {
                 id: userId,
-                name: `user-${Math.random().toString(36).substr(2, 9)}@example.com`,
-                displayName: `User ${Math.random().toString(36).substr(2, 5)}`,
+                name: walletAddress, 
+                displayName: `User (${walletAddress.substring(0, 6)}...${walletAddress.substring(walletAddress.length - 4)})`,
             };
 
-            // 4. Public key credential parameters
             const pubKeyCredParams = [
-                {
-                    type: 'public-key',
-                    alg: -7, // ES256 (common algorithm)
-                },
-                {
-                    type: 'public-key',
-                    alg: -257, // RS256
-                }
+                { type: 'public-key', alg: -7 }, // ES256
+                { type: 'public-key', alg: -257 }, // RS256
             ];
 
             const creationOptions = {
                 challenge,
                 rp,
-                user,
+                user: passkeyUser,
                 pubKeyCredParams,
                 authenticatorSelection: {
-                    authenticatorAttachment: 'platform', // or 'cross-platform'
-                    requireResidentKey: true, // Store the key on the authenticator
-                    userVerification: 'preferred', // e.g., Touch ID, Face ID, PIN
+                    authenticatorAttachment: 'platform',
+                    requireResidentKey: true,
+                    userVerification: 'preferred',
                 },
-                timeout: 60000, // 60 seconds
-                attestation: 'direct', // or 'none', 'indirect'
+                timeout: 60000,
+                attestation: 'direct',
             };
 
-            statusMessage.textContent = 'Waiting for Passkey creation... Please follow browser/OS prompts.';
+            statusMessage.textContent = 'Please follow browser prompts to set up your secure sign-in.';
             const credential = await navigator.credentials.create({ publicKey: creationOptions });
 
             if (credential) {
-                statusMessage.textContent = 'Passkey created successfully! Attempting to open Apple Pass...';
+                statusMessage.textContent = 'Sign-in method created! Opening your Stamp Card...';
                 console.log('Passkey credential created:', credential);
+                console.log('User ID (Wallet Address) used for passkey:', walletAddress);
+                
+                // TODO: Here you might want to link the created passkey credential to the Privy guest user
+                // This typically involves sending credential details to your backend, which then uses Privy's admin SDK.
+                // Or, check if Privy client-side SDK has a method to link a newly created passkey.
+                // For now, we proceed directly to opening the pkpass file.
 
-                // Attempt to open the .pkpass file
-                // On iOS, Safari should offer to add it to Wallet.
-                // On other platforms/browsers, it will likely download.
                 window.location.href = 'demo.pkpass'; 
-
-                // Disable button after attempting to open pass
-                claimButton.disabled = true;
                 claimButton.textContent = 'Claimed & Pass Opened!';
                 
-                // Optionally, you can provide a fallback message if the redirect doesn't work as expected
-                // or if the user is not on iOS, e.g., after a short delay.
                 setTimeout(() => {
-                    if (document.hasFocus()) { // Check if browser still has focus, might indicate redirect didn't happen or was quick
-                        statusMessage.textContent = 'Apple Pass initiated. If it didn\'t open, please check your downloads or ensure you are on a compatible device (iOS).';
+                    if (document.hasFocus()) {
+                        statusMessage.textContent = 'Stamp Card initiated. Check downloads or Wallet app (iOS).';
                     }
-                }, 3000); // Adjust delay as needed
-
+                }, 3000);
             } else {
-                statusMessage.textContent = 'Passkey creation failed or was cancelled.';
+                statusMessage.textContent = 'Secure sign-in setup failed or was cancelled.';
+                claimButton.disabled = false;
             }
         } catch (error) {
-            console.error('Error creating passkey:', error);
-            statusMessage.textContent = `Error: ${error.message}`;
-            if (error.name === 'NotAllowedError') {
-                statusMessage.textContent = 'Passkey creation was cancelled or not allowed. Please try again.';
+            console.error('Overall process error:', error);
+            if (!statusMessage.textContent.startsWith('Account setup error:')) { // Avoid overwriting specific setup errors
+                 statusMessage.textContent = `Error: ${error.message || 'An unexpected error occurred.'}`;
             }
+            if (error.name === 'NotAllowedError') {
+                statusMessage.textContent = 'Operation was cancelled or not allowed. Please try again.';
+            }
+            claimButton.disabled = false;
         }
     });
 }); 
