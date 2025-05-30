@@ -3,7 +3,7 @@ import Privy from '@privy-io/js-sdk-core';
 // Add PrivyClient if you were to use the SDK directly
 // For now, we simulate the Privy interaction.
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     const claimButton = document.getElementById('claimButton');
     const statusMessage = document.getElementById('statusMessage');
     const privyAppId = 'cmb9z52y600o1ky0m78whsb08'; // Your Privy App ID
@@ -54,12 +54,13 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     try {
-        privy = new Privy({ 
+        privy = new Privy({
             appId: privyAppId,
             storage: localStorageAdapter // Use the custom adapter
         });
         console.log('Privy SDK initialized with custom storage adapter.');
-        console.log('Inspecting Privy object:', privy); // Log the privy object for inspection
+        await privy.initialize();
+        console.log('Privy iframe ready. Inspecting Privy object:', privy);
     } catch (error) {
         statusMessage.textContent = 'Error: Account system components failed to initialize. Please refresh.';
         claimButton.disabled = true;
