@@ -83,7 +83,8 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Attempting privy.auth.guest.create()...');
 
             if (privy.auth && privy.auth.guest && typeof privy.auth.guest.create === 'function') {
-                user = await privy.auth.guest.create();
+                const { user: guestUser } = await privy.auth.guest.create();
+                user = guestUser;
                 console.log('privy.auth.guest.create() completed. User:', user);
             } else {
                 console.error('FATAL: privy.auth.guest.create method not available.');
@@ -104,7 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
                  console.log('Guest user already has a wallet:', walletAddress);
             } else {
                 console.log('Attempting privy.embeddedWallet.create() for guest user...');
-                const embeddedWallet = await privy.embeddedWallet.create();
+                const embeddedWallet = await privy.embeddedWallet.create({});
                 console.log('privy.embeddedWallet.create() completed. Wallet:', embeddedWallet);
 
                 if (!embeddedWallet || !embeddedWallet.address) {
