@@ -80,20 +80,13 @@ document.addEventListener('DOMContentLoaded', () => {
         
         try {
             statusMessage.textContent = 'Creating new guest account...';
-            console.log('Attempting guest account creation directly...');
+            console.log('Attempting privy.auth.guest.create()...');
 
-            if (privy.auth && typeof privy.createGuestAccount === 'function') {
-                console.log('Attempting privy.createGuestAccount()...');
-                user = await privy.createGuestAccount();
-                console.log('privy.createGuestAccount() completed. User:', user);
-            } else if (privy.unstable_createGuestAccount && typeof privy.unstable_createGuestAccount === 'function') {
-                console.log('Attempting privy.unstable_createGuestAccount()...');
-                user = await privy.unstable_createGuestAccount();
-                console.log('privy.unstable_createGuestAccount() completed. User:', user);
+            if (privy.auth && privy.auth.guest && typeof privy.auth.guest.create === 'function') {
+                user = await privy.auth.guest.create();
+                console.log('privy.auth.guest.create() completed. User:', user);
             } else {
-                // This else block implies neither createGuestAccount nor unstable_createGuestAccount is a function.
-                // This is a critical failure for the desired headless flow.
-                console.error('FATAL: No method found for direct guest account creation (privy.createGuestAccount or privy.unstable_createGuestAccount).');
+                console.error('FATAL: privy.auth.guest.create method not available.');
                 throw new Error('Headless guest account creation method not available in SDK.');
             }
 
